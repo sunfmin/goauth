@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"testing"
 )
@@ -15,6 +16,7 @@ var sinaconfig = &Configuration{
 	AuthorizeURL:           "http://api.t.sina.com.cn/oauth/authorize",
 	UseAuthorizationHeader: true,
 	UseBodyHash:            true,
+	UserIdKey:              "user_id",
 }
 
 var qqconfig = &Configuration{
@@ -23,6 +25,7 @@ var qqconfig = &Configuration{
 	AuthorizeURL:           "http://open.t.qq.com/cgi-bin/authorize",
 	UseAuthorizationHeader: false,
 	UseBodyHash:            false,
+	UserIdKey:              "name",
 }
 
 func getClientKeyMap() (cc map[string]*ClientCredential) {
@@ -35,6 +38,107 @@ func getClientKeyMap() (cc map[string]*ClientCredential) {
 	json.Unmarshal(bs, &cc)
 
 	return cc
+}
+
+func getTokenMap() (tc map[string]*TokenCredential) {
+	f, err := os.Open(os.Getenv("HOME") + "/.goauth.json")
+	if err != nil {
+		panic(err)
+	}
+	bs, _ := ioutil.ReadAll(f)
+
+	json.Unmarshal(bs, &tc)
+
+	return tc
+}
+
+// Can only be run manually changing the values
+// func TestQQGetToken(t *testing.T) {
+// 	cc := getClientKeyMap()["qq"]
+
+// 	c := NewClient(cc.Key, cc.Secret, qqconfig)
+// 	tc := &TemporaryCredential{
+// 		OAuthToken:    "f194b9c9b54d4572a417b6cc16d50c87",
+// 		OAuthSecret:   "a4589ecf12f34fb131e475d63ea7c6a7",
+// 		OAuthVerifier: "763825",
+// 	}
+// 	permc, err := c.GetTokenCredential(tc)
+// 	t.Errorf("%+v, %+v", permc, err)
+// }
+
+// func TestWeiboGetToken(t *testing.T) {
+// 	cc := getClientKeyMap()["weibo"]
+
+// 	c := NewClient(cc.Key, cc.Secret, sinaconfig)
+// 	tc := &TemporaryCredential{
+// 		OAuthToken:    "f194b9c9b54d4572a417b6cc16d50c87",
+// 		OAuthSecret:   "a4589ecf12f34fb131e475d63ea7c6a7",
+// 		OAuthVerifier: "763825",
+// 	}
+// 	permc, err := c.GetTokenCredential(tc)
+// 	t.Errorf("%+v, %+v", permc, err)
+// }
+
+type UserResult struct {
+	Data *User
+}
+
+type User struct {
+	Name       string
+	Birth_year int
+}
+
+func TestQQSignRequest(t *testing.T) {
+	cc := getClientKeyMap()["qq"]
+
+	c := NewClient(cc.Key, cc.Secret, qqconfig)
+
+	token := getTokenMap()["qq"]
+
+	cl := &http.Client{}
+	req, err := http.NewRequest("GET", "http://open.t.qq.com/api/user/info", nil)
+	c.SignRequest(token, req)
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Errorf("should no error %+v", err)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+
+	var ur *UserResult
+	json.Unmarshal(body, &ur)
+	if ur.Data.Name != "fanliwuxian" {
+		t.Errorf("%+v", string(body))
+	}
+}
+
+type WeiboUser struct {
+	Domain string
+}
+
+func TestWeiboSignRequest(t *testing.T) {
+	cc := getClientKeyMap()["weibo"]
+
+	c := NewClient(cc.Key, cc.Secret, sinaconfig)
+
+	token := getTokenMap()["weibo"]
+
+	cl := &http.Client{}
+	req, err := http.NewRequest("GET", "http://api.t.sina.com.cn/account/verify_credentials.json", nil)
+	c.SignRequest(token, req)
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Errorf("should no error %+v", err)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	// t.Errorf("%+v", string(body))
+
+	var ur *WeiboUser
+	json.Unmarshal(body, &ur)
+	if ur.Domain != "fanliwuxian" {
+		t.Errorf("%+v", string(body))
+	}
 }
 
 func TestErrorWithWrongClientKey(t *testing.T) {
