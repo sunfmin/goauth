@@ -39,7 +39,7 @@ type ClientCredential struct {
 }
 
 type TemporaryCredential struct {
-	OAuthToken             string // returned by /oauth/request_token
+	OAuthToken             string `bson:"_id"` // returned by /oauth/request_token
 	OAuthSecret            string // returned by /oauth/request_token
 	OAuthCallbackConfirmed bool   // returned by /oauth/request_token
 	OAuthVerifier          string // returned by /oauth/authorize
