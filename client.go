@@ -125,6 +125,7 @@ func doRequestAndParseError(client *http.Client, req *http.Request) (values url.
 	if err != nil {
 		return
 	}
+	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	values, err = url.ParseQuery(string(body))
