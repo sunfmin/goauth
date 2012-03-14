@@ -39,3 +39,11 @@ func (ns NameValueSlice) NormalizedString() (r string) {
 	sort.Strings(rs)
 	return strings.Join(rs, url.QueryEscape("&"))
 }
+
+func (ns NameValueSlice) Query() (r url.Values) {
+	r = url.Values{}
+	for _, m := range ns {
+		r.Add(m[0], m[1])
+	}
+	return
+}

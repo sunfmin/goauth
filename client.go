@@ -16,10 +16,12 @@ import (
 )
 
 type Configuration struct {
-	RequestTokenURL string
-	AccessTokenURL  string
-	AuthorizeURL    string
-	Realm           string
+	RequestTokenURL        string
+	AccessTokenURL         string
+	AuthorizeURL           string
+	Realm                  string
+	UseAuthorizationHeader bool
+	UseBodyHash            bool
 }
 
 type Client struct {
@@ -74,7 +76,6 @@ func (c *Client) GetTemporaryCredential(oauthCallback string) (r *TemporaryCrede
 	}
 
 	c.signRequest(req, oauthCallback, nil)
-
 	resp, err := client.Do(req)
 
 	if err != nil {
@@ -86,7 +87,6 @@ func (c *Client) GetTemporaryCredential(oauthCallback string) (r *TemporaryCrede
 	if err != nil {
 		return
 	}
-
 	if len(values.Get("error")) > 0 {
 		err = NewErrorFromValues(values)
 		return
@@ -119,21 +119,23 @@ func (c *Client) signRequest(req *http.Request, oauthCallback string, tc *Tempor
 
 	authorizationvalues := signvalues.Clone()
 	signvalues.Add("oauth_callback", url.QueryEscape(oauthCallback))
-
-	bodyhash := ""
-	if strings.ToLower(req.Header.Get("Content-Type")) != "application/x-www-form-urlencoded" {
-		body := ``
-		if req.Body != nil {
-			bb, _ := ioutil.ReadAll(req.Body)
-			body = string(bb)
-		}
-		bodyhash = digestAndEncode(sha1.New(), body)
-		signvalues.Add("oauth_body_hash", url.QueryEscape(bodyhash))
-	}
-
 	authorizationvalues.Add("oauth_callback", oauthCallback)
-	if bodyhash != "" {
-		authorizationvalues.Add("oauth_body_hash", bodyhash)
+
+	if c.config.UseBodyHash {
+		bodyhash := ""
+		if strings.ToLower(req.Header.Get("Content-Type")) != "application/x-www-form-urlencoded" {
+			body := ``
+			if req.Body != nil {
+				bb, _ := ioutil.ReadAll(req.Body)
+				body = string(bb)
+			}
+			bodyhash = digestAndEncode(sha1.New(), body)
+			signvalues.Add("oauth_body_hash", url.QueryEscape(bodyhash))
+		}
+
+		if bodyhash != "" {
+			authorizationvalues.Add("oauth_body_hash", bodyhash)
+		}
 	}
 
 	query := req.URL.Query()
@@ -158,7 +160,12 @@ func (c *Client) signRequest(req *http.Request, oauthCallback string, tc *Tempor
 		authorizationvalues.Add("OAuth realm", c.config.Realm)
 	}
 
-	req.Header.Add("Authorization", authorizationvalues.Authorization())
-	req.Header.Add("User-Agent", "goauth")
+	if c.config.UseAuthorizationHeader {
+		req.Header.Add("Authorization", authorizationvalues.Authorization())
+
+	} else {
+		req.URL.RawQuery = authorizationvalues.Query().Encode()
+	}
+	req.Header.Add("User-Agent", "github.com/sunfmin/goauth")
 
 }
