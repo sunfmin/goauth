@@ -5,15 +5,19 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io/ioutil"
-	"math/rand"
+	"log"
+	// "math/rand"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+var Verbose bool
 
 type Configuration struct {
 	RequestTokenURL        string
@@ -22,6 +26,7 @@ type Configuration struct {
 	Realm                  string
 	UseAuthorizationHeader bool
 	UseBodyHash            bool
+	UserURL                string
 	UserIdKey              string
 }
 
@@ -31,6 +36,8 @@ type Configuration struct {
 type Client struct {
 	clientCredential *ClientCredential
 	config           *Configuration
+	Scope            string
+	RequestMethod    string
 }
 
 type ClientCredential struct {
@@ -49,6 +56,7 @@ type TokenCredential struct {
 	OAuthToken       string // returned by /oauth/access_token
 	OAuthTokenSecret string // returned by /oauth/access_token
 	UserId           string
+	UserInfo         map[string]interface{}
 }
 
 type Error struct {
@@ -88,7 +96,7 @@ func (c *Client) GetAuthorizeURL(oauthCallback string) (authorizeUrl string, tc 
 
 func (c *Client) GetTemporaryCredential(oauthCallback string) (r *TemporaryCredential, err error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", c.config.RequestTokenURL, nil)
+	req, err := http.NewRequest(c.requestMethodWithDefault(), c.config.RequestTokenURL, nil)
 	if err != nil {
 		return
 	}
@@ -102,17 +110,33 @@ func (c *Client) GetTemporaryCredential(oauthCallback string) (r *TemporaryCrede
 
 func (c *Client) GetTokenCredential(tcWithVerifier *TemporaryCredential) (r *TokenCredential, err error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", c.config.AccessTokenURL, nil)
+
+	req, err := http.NewRequest(c.requestMethodWithDefault(), c.config.AccessTokenURL, nil)
 	if err != nil {
 		return
 	}
 	c.signTemporaryRequest(req, "", tcWithVerifier)
 	values, err := doRequestAndParseError(client, req)
+	if err != nil {
+		return
+	}
 	r = &TokenCredential{
 		OAuthToken:       values.Get("oauth_token"),
 		OAuthTokenSecret: values.Get("oauth_token_secret"),
 		UserId:           values.Get(c.config.UserIdKey),
 	}
+	if c.config.UserURL != "" {
+		infoReq, err := http.NewRequest("GET", c.config.UserURL, nil)
+		c.SignRequest(r, infoReq)
+		resp, err := client.Do(infoReq)
+		if err == nil {
+			defer resp.Body.Close()
+
+			b, _ := ioutil.ReadAll(resp.Body)
+			json.Unmarshal(b, &r.UserInfo)
+		}
+	}
+
 	return
 }
 
@@ -120,6 +144,13 @@ func (c *Client) SignRequest(token *TokenCredential, req *http.Request) {
 	c.signTemporaryRequest(req, "", &TemporaryCredential{OAuthToken: token.OAuthToken, OAuthSecret: token.OAuthTokenSecret})
 }
 
+func (c *Client) requestMethodWithDefault() string {
+	m := c.RequestMethod
+	if m == "" {
+		m = "POST"
+	}
+	return m
+}
 func doRequestAndParseError(client *http.Client, req *http.Request) (values url.Values, err error) {
 	resp, err := client.Do(req)
 	if err != nil {
@@ -128,6 +159,10 @@ func doRequestAndParseError(client *http.Client, req *http.Request) (values url.
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
+	if Verbose {
+		log.Printf("goauth: request: %s\n", req.URL.String())
+		log.Printf("goauth: response: %s\n", string(body))
+	}
 	values, err = url.ParseQuery(string(body))
 	if err != nil {
 		return
@@ -153,8 +188,12 @@ func (c *Client) signTemporaryRequest(req *http.Request, oauthCallback string, t
 	signvalues.Add("oauth_consumer_key", c.clientCredential.Key)
 	signvalues.Add("oauth_signature_method", "HMAC-SHA1")
 	signvalues.Add("oauth_timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-	signvalues.Add("oauth_nonce", fmt.Sprintf("%d", rand.Int63()))
+	// signvalues.Add("oauth_nonce", fmt.Sprintf("%x", fmt.Sprintf("%s", rand.Int())))
+	signvalues.Add("oauth_nonce", "90a198deebe36f9397eab61c2047481c")
 	signvalues.Add("oauth_version", "1.0")
+	if c.Scope != "" {
+		signvalues.Add("scope", c.Scope)
+	}
 
 	if tc != nil {
 		if tc.OAuthToken != "" {

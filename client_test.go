@@ -16,6 +16,7 @@ var sinaconfig = &Configuration{
 	AuthorizeURL:           "http://api.t.sina.com.cn/oauth/authorize",
 	UseAuthorizationHeader: true,
 	UseBodyHash:            true,
+	UserURL:                "http://open.t.qq.com/api/user/info",
 	UserIdKey:              "user_id",
 }
 
@@ -25,6 +26,7 @@ var qqconfig = &Configuration{
 	AuthorizeURL:           "http://open.t.qq.com/cgi-bin/authorize",
 	UseAuthorizationHeader: false,
 	UseBodyHash:            false,
+	UserURL:                "http://api.t.sina.com.cn/account/verify_credentials.json",
 	UserIdKey:              "name",
 }
 
